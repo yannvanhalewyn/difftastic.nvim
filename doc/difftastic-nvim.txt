@@ -1,0 +1,196 @@
+*difftastic-nvim.txt*  Side-by-side difftastic diff viewer for Neovim
+
+==============================================================================
+CONTENTS                                              *difftastic-nvim-contents*
+
+    1. Introduction .......................... |difftastic-nvim-introduction|
+    2. Requirements .......................... |difftastic-nvim-requirements|
+    3. Installation .......................... |difftastic-nvim-installation|
+    4. Commands .............................. |difftastic-nvim-commands|
+    5. Keybindings ........................... |difftastic-nvim-keybindings|
+    6. Configuration ......................... |difftastic-nvim-configuration|
+    7. Highlights ............................ |difftastic-nvim-highlights|
+
+==============================================================================
+1. INTRODUCTION                                   *difftastic-nvim-introduction*
+
+difftastic-nvim displays difftastic diffs in a side-by-side view with syntax
+highlighting, a file tree sidebar, and synchronized scrolling.
+
+Features:
+- Side-by-side diff view with synchronized scrolling
+- Hierarchical file tree with directory collapsing
+- Syntax highlighting for the source language
+- Filler lines to indicate alignment gaps
+- Support for jj and git version control
+
+==============================================================================
+2. REQUIREMENTS                                   *difftastic-nvim-requirements*
+
+- Neovim 0.9+
+- nui.nvim (https://github.com/MunifTanjim/nui.nvim)
+- difftastic with aligned_lines support (see note below)
+- jj or git version control
+- Rust toolchain (only if building from source)
+
+Note: This plugin requires difftastic with `aligned_lines` support in JSON
+output. This feature is available in this fork until PR #936 is merged:
+https://github.com/clabby/difftastic/tree/cl/add-aligned-lines
+
+==============================================================================
+3. INSTALLATION                                     *difftastic-nvim-installation*
+
+Using lazy.nvim with auto-download (recommended): >lua
+
+    {
+        "clabby/difftastic.nvim",
+        dependencies = { "MunifTanjim/nui.nvim" },
+        config = function()
+            require("difftastic-nvim").setup({
+                download = true,
+            })
+        end,
+    }
+<
+Building from source (requires Rust toolchain): >lua
+
+    {
+        "clabby/difftastic.nvim",
+        dependencies = { "MunifTanjim/nui.nvim" },
+        config = function()
+            require("difftastic-nvim").setup()
+        end,
+    }
+<
+The plugin automatically builds from source on first use if no binary is found.
+
+Downloaded binaries are stored in: >
+    vim.fn.stdpath("data") .. "/difftastic-nvim"
+<
+==============================================================================
+4. COMMANDS                                           *difftastic-nvim-commands*
+
+                                                                        *:Difft*
+:Difft {ref}
+    Open diff view for a jj revset or git commit/range.
+
+    jj examples: >
+        :Difft @              " Current change
+        :Difft @-             " Parent of current change
+        :Difft abc123         " Specific revision
+<
+    git examples: >
+        :Difft HEAD           " Last commit
+        :Difft abc123         " Specific commit
+        :Difft main..HEAD     " Commit range
+<
+                                                                   *:DifftClose*
+:DifftClose
+    Close the diff view.
+
+==============================================================================
+5. KEYBINDINGS                                     *difftastic-nvim-keybindings*
+
+All keybindings are buffer-local (only active in diff buffers) and can be
+customized via |difftastic-nvim-configuration|.
+
+Default keybindings:
+
+    Key         Action ~
+    ]f          Next file
+    [f          Previous file
+    ]c          Next hunk
+    [c          Previous hunk
+    <Tab>       Toggle focus between file tree and diff panes
+    <CR>        Select file or toggle directory (in tree)
+    q           Close diff view
+
+Filler lines (shown as diagonal lines) indicate where content exists on one
+side but not the other.
+
+==============================================================================
+6. CONFIGURATION                                 *difftastic-nvim-configuration*
+
+Call the setup function with your options: >lua
+
+    require("difftastic-nvim").setup({
+        download = false, -- Auto-download pre-built binary (default: false)
+        vcs = "jj",       -- "jj" (default) or "git"
+        keymaps = {
+            next_file = "]f",
+            prev_file = "[f",
+            next_hunk = "]c",
+            prev_hunk = "[c",
+            close = "q",
+            focus_tree = "<Tab>",
+            focus_diff = "<Tab>",
+            select = "<CR>",
+        },
+        tree = {
+            width = 40,
+            icons = {
+                enable = true,
+                dir_open = "▼",
+                dir_closed = "▶",
+            },
+        },
+        highlights = {
+            -- See |difftastic-nvim-highlights| for available groups
+        },
+    })
+<
+All options are optional. Only specify what you want to override.
+
+                                                       *difftastic-nvim-download*
+download ~
+    When true, automatically downloads a pre-built binary for your platform
+    from GitHub releases if no local build is found. Binaries are cached in
+    `vim.fn.stdpath("data") .. "/difftastic-nvim"`. Default: false
+
+                                                        *difftastic-nvim-keymaps*
+Keymap options:
+
+    next_file       Jump to next file in the diff
+    prev_file       Jump to previous file in the diff
+    next_hunk       Jump to next change hunk within current file
+    prev_hunk       Jump to previous change hunk within current file
+    close           Close the diff view
+    focus_tree      Move focus to the file tree (from diff panes)
+    focus_diff      Move focus to the diff pane (from tree)
+    select          Select file or toggle directory in tree
+
+                                                           *difftastic-nvim-tree*
+Tree options:
+
+    width           Width of the file tree sidebar (default: 40)
+    icons.enable    Use nvim-web-devicons for file icons (default: true)
+    icons.dir_open  Icon for expanded directories (default: "▼")
+    icons.dir_closed  Icon for collapsed directories (default: "▶")
+
+==============================================================================
+7. HIGHLIGHTS                                       *difftastic-nvim-highlights*
+
+The following highlight groups can be customized:
+
+    Group                 Default                 Description ~
+    DifftAdded            bg=#2d4a3e              Added lines background
+    DifftRemoved          bg=#4a2d2d              Removed lines background
+    DifftAddedInline      bg=#3d6a4e              Inline added text
+    DifftRemovedInline    bg=#6a3d3d              Inline removed text
+    DifftFiller           fg=#3b4261              Filler lines for gaps
+    DifftDirectory        fg=#7aa2f7, bold        Directory names in tree
+    DifftFileAdded        fg=#9ece6a              Added file in tree
+    DifftFileDeleted      fg=#f7768e              Deleted file in tree
+    DifftTreeCurrent      bg=#3b4261, bold        Current file in tree
+
+Override in setup: >lua
+
+    require("difftastic-nvim").setup({
+        highlights = {
+            DifftAdded = { bg = "#1a2f1a" },
+            DifftRemoved = { bg = "#2f1a1a" },
+        },
+    })
+<
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
