@@ -130,8 +130,9 @@ Filler lines (`╱╱╱`) indicate where content exists on one side but not the
 
 ```lua
 require("difftastic-nvim").setup({
-    download = false, -- Auto-download pre-built binary (default: false)
-    vcs = "jj",       -- "jj" (default) or "git"
+    download = false,            -- Auto-download pre-built binary (default: false)
+    vcs = "jj",                  -- "jj" (default) or "git"
+    highlight_mode = "treesitter", -- "treesitter" (default) or "difftastic"
     keymaps = {
         next_file = "]f",
         prev_file = "[f",
@@ -151,22 +152,38 @@ require("difftastic-nvim").setup({
         },
     },
     highlights = {
+        -- Treesitter mode (background colors)
         DifftAdded = { bg = "#2d4a3e" },
         DifftRemoved = { bg = "#4a2d2d" },
         DifftAddedInline = { bg = "#3d6a4e" },
         DifftRemovedInline = { bg = "#6a3d3d" },
+        -- Difftastic mode (foreground colors)
+        DifftAddedFg = { fg = "#9ece6a" },
+        DifftRemovedFg = { fg = "#f7768e" },
+        DifftAddedInlineFg = { fg = "#9ece6a", bold = true },
+        DifftRemovedInlineFg = { fg = "#f7768e", bold = true },
+        -- Shared
+        DifftFiller = { fg = "#3b4261" },
         DifftFileAdded = { fg = "#9ece6a" },
         DifftFileDeleted = { fg = "#f7768e" },
         DifftTreeCurrent = { bg = "#3b4261", bold = true },
         DifftDirectory = { fg = "#7aa2f7", bold = true },
-        DifftFiller = { fg = "#3b4261" },
     },
 })
 ```
 
 All options are optional. Only specify what you want to override.
 
+### Highlight Modes
+
+The `highlight_mode` option controls how syntax highlighting is applied:
+
+- **`treesitter`** (default): Full syntax highlighting via Neovim's treesitter. Changes are shown with background colors.
+- **`difftastic`**: Minimal highlighting like the CLI. No syntax colors; changes are shown with foreground colors (green/red) to make diffs more prominent.
+
 ## Highlight Groups
+
+**Treesitter mode** (background colors):
 
 | Group | Description |
 |-------|-------------|
@@ -174,6 +191,20 @@ All options are optional. Only specify what you want to override.
 | `DifftRemoved` | Removed lines background |
 | `DifftAddedInline` | Inline added text |
 | `DifftRemovedInline` | Inline removed text |
+
+**Difftastic mode** (foreground colors):
+
+| Group | Description |
+|-------|-------------|
+| `DifftAddedFg` | Added text (green) |
+| `DifftRemovedFg` | Removed text (red) |
+| `DifftAddedInlineFg` | Inline added (green, bold) |
+| `DifftRemovedInlineFg` | Inline removed (red, bold) |
+
+**Shared**:
+
+| Group | Description |
+|-------|-------------|
 | `DifftFiller` | Filler lines for alignment gaps |
 | `DifftDirectory` | Directory names in tree |
 | `DifftFileAdded` | Added file in tree |
