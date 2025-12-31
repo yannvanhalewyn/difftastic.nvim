@@ -119,8 +119,9 @@ side but not the other.
 Call the setup function with your options: >lua
 
     require("difftastic-nvim").setup({
-        download = false, -- Auto-download pre-built binary (default: false)
-        vcs = "jj",       -- "jj" (default) or "git"
+        download = false,       -- Auto-download pre-built binary (default: false)
+        vcs = "jj",             -- "jj" (default) or "git"
+        highlight_mode = "treesitter", -- "treesitter" (default) or "difftastic"
         keymaps = {
             next_file = "]f",
             prev_file = "[f",
@@ -157,6 +158,22 @@ download ~
 
     Default: false
 
+                                                 *difftastic-nvim-highlight-mode*
+highlight_mode ~
+    Controls how syntax highlighting is applied in diff buffers:
+
+    "treesitter" (default):
+        Uses Neovim's treesitter/LSP for full syntax highlighting.
+        Provides rich, colorful code with all language features highlighted.
+
+    "difftastic":
+        Uses minimal highlighting like difftastic's CLI output.
+        No syntax highlighting is applied; only the diff changes are
+        colored (green for additions, red for deletions). This makes
+        changes more visually prominent against plain text.
+
+    Default: "treesitter"
+
                                                         *difftastic-nvim-keymaps*
 Keymap options:
 
@@ -182,12 +199,21 @@ Tree options:
 
 The following highlight groups can be customized:
 
+Diff highlights for treesitter mode (background colors):
     Group                 Default                 Description ~
     DifftAdded            bg=#2d4a3e              Added lines background
     DifftRemoved          bg=#4a2d2d              Removed lines background
     DifftAddedInline      bg=#3d6a4e              Inline added text
     DifftRemovedInline    bg=#6a3d3d              Inline removed text
     DifftFiller           fg=#3b4261              Filler lines for gaps
+
+Diff highlights for difftastic mode (foreground colors like CLI):
+    DifftAddedFg          fg=#9ece6a              Added text (green)
+    DifftRemovedFg        fg=#f7768e              Removed text (red)
+    DifftAddedInlineFg    fg=#9ece6a, bold        Inline added (green bold)
+    DifftRemovedInlineFg  fg=#f7768e, bold        Inline removed (red bold)
+
+Tree highlights:
     DifftDirectory        fg=#7aa2f7, bold        Directory names in tree
     DifftFileAdded        fg=#9ece6a              Added file in tree
     DifftFileDeleted      fg=#f7768e              Deleted file in tree

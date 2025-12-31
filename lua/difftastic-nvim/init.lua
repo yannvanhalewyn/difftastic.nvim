@@ -11,6 +11,8 @@ local keymaps = require("difftastic-nvim.keymaps")
 M.config = {
     download = false,
     vcs = "jj",
+    --- Highlight mode: "treesitter" (full syntax) or "difftastic" (no syntax, colored changes only)
+    highlight_mode = "treesitter",
     keymaps = {
         next_file = "]f",
         prev_file = "[f",
@@ -55,6 +57,9 @@ function M.setup(opts)
     end
     if opts.vcs then
         M.config.vcs = opts.vcs
+    end
+    if opts.highlight_mode then
+        M.config.highlight_mode = opts.highlight_mode
     end
     if opts.keymaps then
         M.config.keymaps = vim.tbl_extend("force", M.config.keymaps, opts.keymaps)

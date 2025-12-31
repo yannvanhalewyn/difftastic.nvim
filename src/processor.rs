@@ -260,16 +260,21 @@ fn process_deleted(
     }
 }
 
+/// Change info for a line: the changes slice for highlight computation.
+type ChangeInfo<'a> = &'a [Change];
+
 /// Extracts change information from chunks into lookup maps.
 ///
 /// Returns `(lhs_changes, rhs_changes)` hashmaps keyed by line number
 /// for efficient lookup during row processing.
 #[allow(clippy::type_complexity)]
-fn extract_changes(chunks: &[Chunk]) -> (HashMap<u32, &[Change]>, HashMap<u32, &[Change]>) {
+fn extract_changes(
+    chunks: &[Chunk],
+) -> (HashMap<u32, ChangeInfo<'_>>, HashMap<u32, ChangeInfo<'_>>) {
     // Pre-calculate capacity hint from total diff lines
     let capacity: usize = chunks.iter().map(|c| c.len()).sum();
-    let mut lhs_changes: HashMap<u32, &[Change]> = HashMap::with_capacity(capacity);
-    let mut rhs_changes: HashMap<u32, &[Change]> = HashMap::with_capacity(capacity);
+    let mut lhs_changes: HashMap<u32, ChangeInfo<'_>> = HashMap::with_capacity(capacity);
+    let mut rhs_changes: HashMap<u32, ChangeInfo<'_>> = HashMap::with_capacity(capacity);
 
     for chunk in chunks {
         for diff_line in chunk {
@@ -312,17 +317,17 @@ fn process_changed(
             .and_then(|ln| new_lines.get(ln as usize))
             .map_or_else(String::new, |s| s.clone());
 
+        // Get changes for each side
+        let left_changes = lhs_ln.and_then(|ln| lhs_changes.get(&ln).copied());
+        let right_changes = rhs_ln.and_then(|ln| rhs_changes.get(&ln).copied());
+
         // Compute highlights based on change information
-        let left_highlights = lhs_ln
-            .and_then(|ln| lhs_changes.get(&ln))
-            .map_or_else(Highlights::new, |changes| {
-                compute_highlights(&left_content, changes)
-            });
-        let right_highlights = rhs_ln
-            .and_then(|ln| rhs_changes.get(&ln))
-            .map_or_else(Highlights::new, |changes| {
-                compute_highlights(&right_content, changes)
-            });
+        let left_highlights = left_changes.map_or_else(Highlights::new, |changes| {
+            compute_highlights(&left_content, changes)
+        });
+        let right_highlights = right_changes.map_or_else(Highlights::new, |changes| {
+            compute_highlights(&right_content, changes)
+        });
 
         // Determine if this row is part of a hunk (has changes or fillers)
         let is_changed = lhs_ln.is_none()

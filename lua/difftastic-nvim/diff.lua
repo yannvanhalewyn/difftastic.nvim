@@ -71,6 +71,7 @@ end
 --- @param state table Plugin state
 --- @param file table File data with rows, hunk_starts, language
 function M.render(state, file)
+    local config = require("difftastic-nvim").config
     local rows = file.rows or {}
 
     M.hunk_positions = {}
@@ -101,12 +102,20 @@ function M.render(state, file)
     vim.bo[state.left_buf].modifiable = false
     vim.bo[state.right_buf].modifiable = false
 
-    local ft = FILETYPES[file.language]
-    if ft then
-        vim.defer_fn(function()
-            if vim.api.nvim_buf_is_valid(state.left_buf) then vim.bo[state.left_buf].filetype = ft end
-            if vim.api.nvim_buf_is_valid(state.right_buf) then vim.bo[state.right_buf].filetype = ft end
-        end, 10)
+    -- Apply syntax highlighting based on mode
+    local use_treesitter = config.highlight_mode ~= "difftastic"
+    if use_treesitter then
+        local ft = FILETYPES[file.language]
+        if ft then
+            vim.defer_fn(function()
+                if vim.api.nvim_buf_is_valid(state.left_buf) then
+                    vim.bo[state.left_buf].filetype = ft
+                end
+                if vim.api.nvim_buf_is_valid(state.right_buf) then
+                    vim.bo[state.right_buf].filetype = ft
+                end
+            end, 10)
+        end
     end
 
     local left_ns = vim.api.nvim_create_namespace("difft-left")
@@ -114,16 +123,25 @@ function M.render(state, file)
     vim.api.nvim_buf_clear_namespace(state.left_buf, left_ns, 0, -1)
     vim.api.nvim_buf_clear_namespace(state.right_buf, right_ns, 0, -1)
 
+    -- Choose highlight groups based on mode
+    -- treesitter mode: background colors
+    -- difftastic mode: foreground colors (like CLI)
+    local removed_hl = use_treesitter and "DifftRemoved" or "DifftRemovedFg"
+    local removed_inline_hl = use_treesitter and "DifftRemovedInline" or "DifftRemovedInlineFg"
+    local added_hl = use_treesitter and "DifftAdded" or "DifftAddedFg"
+    local added_inline_hl = use_treesitter and "DifftAddedInline" or "DifftAddedInlineFg"
+
+    -- Apply diff highlights (additions/removals)
     for i, row in ipairs(rows) do
         local line = i - 1
 
         for _, hl in ipairs(row.left.highlights) do
-            local group = hl["end"] == -1 and "DifftRemoved" or "DifftRemovedInline"
+            local group = hl["end"] == -1 and removed_hl or removed_inline_hl
             vim.api.nvim_buf_add_highlight(state.left_buf, left_ns, group, line, hl.start, hl["end"])
         end
 
         for _, hl in ipairs(row.right.highlights) do
-            local group = hl["end"] == -1 and "DifftAdded" or "DifftAddedInline"
+            local group = hl["end"] == -1 and added_hl or added_inline_hl
             vim.api.nvim_buf_add_highlight(state.right_buf, right_ns, group, line, hl.start, hl["end"])
         end
 
