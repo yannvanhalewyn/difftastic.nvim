@@ -191,8 +191,8 @@ Tree options:
 
     width           Width of the file tree sidebar (default: 40)
     icons.enable    Use nvim-web-devicons for file icons (default: true)
-    icons.dir_open  Icon for expanded directories (default: "▼")
-    icons.dir_closed  Icon for collapsed directories (default: "▶")
+    icons.dir_open  Icon for expanded directories (default: "")
+    icons.dir_closed  Icon for collapsed directories (default: "")
 
 ==============================================================================
 7. HIGHLIGHTS                                       *difftastic-nvim-highlights*

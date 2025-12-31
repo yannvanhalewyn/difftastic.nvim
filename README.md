@@ -83,6 +83,7 @@ Requires a Rust toolchain. The plugin automatically builds from source on first 
 |---------|-------------|
 | `:Difft <ref>` | Open diff view for a jj revset or git commit/range |
 | `:DifftClose` | Close the diff view |
+| `:DifftUpdate` | Update to latest release (requires `download = true`) |
 
 ### Examples (jj)
 
