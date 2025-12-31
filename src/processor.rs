@@ -181,16 +181,20 @@ pub struct DisplayFile {
 /// - Created files: all `new_lines` become additions (right side only)
 /// - Deleted files: all `old_lines` become deletions (left side only)
 /// - Changed files: uses `aligned_lines` to pair up lines from both versions
+///
+/// The `stats` parameter provides line-based diff stats from the VCS (additions, deletions).
+/// If `None`, stats are computed from the file content.
 #[must_use]
 pub fn process_file(
     file: DifftFile,
     old_lines: Vec<String>,
     new_lines: Vec<String>,
+    stats: Option<(u32, u32)>,
 ) -> DisplayFile {
     match file.status {
-        Status::Created => process_created(file, new_lines),
-        Status::Deleted => process_deleted(file, old_lines),
-        Status::Changed => process_changed(file, &old_lines, &new_lines),
+        Status::Created => process_created(file, new_lines, stats),
+        Status::Deleted => process_deleted(file, old_lines, stats),
+        Status::Changed => process_changed(file, &old_lines, &new_lines, stats),
     }
 }
 
@@ -198,7 +202,11 @@ pub fn process_file(
 ///
 /// All lines appear on the right side with full-line highlighting,
 /// with filler lines on the left side.
-fn process_created(file: DifftFile, new_lines: Vec<String>) -> DisplayFile {
+fn process_created(
+    file: DifftFile,
+    new_lines: Vec<String>,
+    stats: Option<(u32, u32)>,
+) -> DisplayFile {
     let rows: Vec<Row> = new_lines
         .into_iter()
         .map(|line| Row {
@@ -207,7 +215,7 @@ fn process_created(file: DifftFile, new_lines: Vec<String>) -> DisplayFile {
         })
         .collect();
 
-    let additions = rows.len() as u32;
+    let (additions, deletions) = stats.unwrap_or((rows.len() as u32, 0));
     let hunk_starts = if rows.is_empty() { vec![] } else { vec![0] };
 
     DisplayFile {
@@ -215,7 +223,7 @@ fn process_created(file: DifftFile, new_lines: Vec<String>) -> DisplayFile {
         language: file.language,
         status: file.status,
         additions,
-        deletions: 0,
+        deletions,
         rows,
         hunk_starts,
     }
@@ -225,7 +233,11 @@ fn process_created(file: DifftFile, new_lines: Vec<String>) -> DisplayFile {
 ///
 /// All lines appear on the left side with full-line highlighting,
 /// with filler lines on the right side.
-fn process_deleted(file: DifftFile, old_lines: Vec<String>) -> DisplayFile {
+fn process_deleted(
+    file: DifftFile,
+    old_lines: Vec<String>,
+    stats: Option<(u32, u32)>,
+) -> DisplayFile {
     let rows: Vec<Row> = old_lines
         .into_iter()
         .map(|line| Row {
@@ -234,14 +246,14 @@ fn process_deleted(file: DifftFile, old_lines: Vec<String>) -> DisplayFile {
         })
         .collect();
 
-    let deletions = rows.len() as u32;
+    let (additions, deletions) = stats.unwrap_or((0, rows.len() as u32));
     let hunk_starts = if rows.is_empty() { vec![] } else { vec![0] };
 
     DisplayFile {
         path: file.path,
         language: file.language,
         status: file.status,
-        additions: 0,
+        additions,
         deletions,
         rows,
         hunk_starts,
@@ -278,7 +290,12 @@ fn extract_changes(chunks: &[Chunk]) -> (HashMap<u32, &[Change]>, HashMap<u32, &
 /// Uses the pre-computed `aligned_lines` from difftastic to create
 /// properly aligned rows. Computes highlights based on the change
 /// information in the chunks.
-fn process_changed(file: DifftFile, old_lines: &[String], new_lines: &[String]) -> DisplayFile {
+fn process_changed(
+    file: DifftFile,
+    old_lines: &[String],
+    new_lines: &[String],
+    stats: Option<(u32, u32)>,
+) -> DisplayFile {
     let (lhs_changes, rhs_changes) = extract_changes(&file.chunks);
     let num_rows = file.aligned_lines.len();
 
@@ -327,12 +344,15 @@ fn process_changed(file: DifftFile, old_lines: &[String], new_lines: &[String]) 
         });
     }
 
+    // Use VCS stats if available, otherwise default to 0
+    let (additions, deletions) = stats.unwrap_or((0, 0));
+
     DisplayFile {
         path: file.path,
         language: file.language,
         status: file.status,
-        additions: rhs_changes.len() as u32,
-        deletions: lhs_changes.len() as u32,
+        additions,
+        deletions,
         rows,
         hunk_starts,
     }
@@ -528,7 +548,7 @@ mod tests {
             aligned_lines: vec![],
             chunks: vec![],
         };
-        let result = process_file(file, vec![], vec!["a".into(), "b".into()]);
+        let result = process_file(file, vec![], vec!["a".into(), "b".into()], Some((2, 0)));
 
         assert_eq!(result.rows.len(), 2);
         assert!(result.rows[0].left.is_filler);
@@ -549,7 +569,7 @@ mod tests {
             aligned_lines: vec![],
             chunks: vec![],
         };
-        let result = process_file(file, vec!["x".into(), "y".into()], vec![]);
+        let result = process_file(file, vec!["x".into(), "y".into()], vec![], Some((0, 2)));
 
         assert_eq!(result.rows.len(), 2);
         assert_eq!(result.rows[0].left.content, "x");
@@ -575,6 +595,7 @@ mod tests {
             file,
             vec!["line1".into(), "foo".into(), "line3".into()],
             vec!["line1".into(), "foobar".into(), "line3".into()],
+            Some((1, 1)),
         );
 
         assert_eq!(result.rows.len(), 3);
@@ -600,6 +621,7 @@ mod tests {
             file,
             vec!["line 1".into(), "line 3".into()],
             vec!["line 1".into(), "new line".into(), "line 3".into()],
+            Some((1, 0)),
         );
 
         assert_eq!(result.rows.len(), 3);
@@ -625,6 +647,7 @@ mod tests {
             file,
             vec!["line 1".into(), "deleted".into(), "line 3".into()],
             vec!["line 1".into(), "line 3".into()],
+            Some((0, 1)),
         );
 
         assert_eq!(result.rows.len(), 3);
@@ -711,7 +734,7 @@ mod tests {
             "}".into(),
         ];
 
-        let result = process_file(file, old_lines, new_lines);
+        let result = process_file(file, old_lines, new_lines, None);
 
         assert_eq!(result.rows.len(), 5);
         assert_eq!(result.rows[0].left.content, "Self { a, b, c }");
@@ -766,7 +789,7 @@ mod tests {
         ];
         let new_lines = vec!["Self { a, b, c }".into()];
 
-        let result = process_file(file, old_lines, new_lines);
+        let result = process_file(file, old_lines, new_lines, None);
 
         assert_eq!(result.rows.len(), 5);
         assert_eq!(result.rows[0].left.content, "Self {");
@@ -823,7 +846,7 @@ mod tests {
             "fff".into(),
         ];
 
-        let result = process_file(file, old_lines, new_lines);
+        let result = process_file(file, old_lines, new_lines, None);
 
         // Should have two hunks: one starting at row 1, one at row 5
         assert_eq!(result.hunk_starts.len(), 2);

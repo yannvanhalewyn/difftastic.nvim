@@ -193,6 +193,34 @@ local function prepare_node(node)
     return line
 end
 
+-- Number of header lines (blank + summary + blank)
+M.header_lines = 3
+
+local function render_header(state, total_add, total_del)
+    local width = get_config().width
+
+    -- Format: "Additions: N | Deletions: M"
+    local add_label, del_label = "Additions: ", "Deletions: "
+    local separator = " | "
+    local stats = add_label .. total_add .. separator .. del_label .. total_del
+
+    -- Center the stats
+    local padding = math.floor((width - #stats) / 2)
+    local header_line = string.rep(" ", math.max(0, padding)) .. stats
+
+    vim.api.nvim_buf_set_lines(state.tree_buf, 0, 0, false, { "", header_line, "" })
+
+    -- Apply highlights to the numbers only (on line index 1, the middle line)
+    local ns = vim.api.nvim_create_namespace("difft-tree-header")
+    local add_num_start = padding + #add_label
+    local add_num_end = add_num_start + #tostring(total_add)
+    vim.api.nvim_buf_add_highlight(state.tree_buf, ns, "DifftFileAdded", 1, add_num_start, add_num_end)
+
+    local del_num_start = padding + #add_label + #tostring(total_add) + #separator + #del_label
+    local del_num_end = del_num_start + #tostring(total_del)
+    vim.api.nvim_buf_add_highlight(state.tree_buf, ns, "DifftFileDeleted", 1, del_num_start, del_num_end)
+end
+
 function M.open(state)
     vim.cmd("topleft vertical " .. get_config().width .. " new")
     state.tree_win = vim.api.nvim_get_current_win()
@@ -204,30 +232,37 @@ function M.open(state)
     vim.wo[state.tree_win].winfixwidth = true
     vim.wo[state.tree_win].cursorline = true
 
+    vim.bo[state.tree_buf].buftype = "nofile"
+    vim.bo[state.tree_buf].bufhidden = "wipe"
+    vim.bo[state.tree_buf].swapfile = false
+    vim.bo[state.tree_buf].filetype = "difft-tree"
+    vim.bo[state.tree_buf].modifiable = true
+
     -- Build intermediate tree structure
     local root = build_intermediate_tree(state.files)
     propagate_stats(root)
     flatten_node(root)
     sort_node(root)
 
+    -- Store totals for header
+    M.total_additions = root.additions
+    M.total_deletions = root.deletions
+
     -- Convert to nui nodes
     M.file_to_node_id = {}
     local nui_nodes = convert_to_nui_nodes(root, M.file_to_node_id)
 
-    -- Create nui tree
+    -- Render header first
+    render_header(state, root.additions, root.deletions)
+
+    -- Create nui tree (starts after header)
     M.tree = NuiTree({
         bufnr = state.tree_buf,
         nodes = nui_nodes,
         prepare_node = prepare_node,
-        buf_options = {
-            buftype = "nofile",
-            bufhidden = "wipe",
-            swapfile = false,
-            filetype = "difft-tree",
-        },
     })
 
-    M.tree:render()
+    M.tree:render(M.header_lines + 1)
 
     -- Keymaps
     local difft = require("difftastic-nvim")
@@ -309,13 +344,13 @@ function M.highlight_current(state)
     if not M.tree or not state.tree_buf then return end
 
     local ns = vim.api.nvim_create_namespace("difft-tree-current")
-    vim.api.nvim_buf_clear_namespace(state.tree_buf, ns, 0, -1)
+    vim.api.nvim_buf_clear_namespace(state.tree_buf, ns, M.header_lines, -1)
 
     M.current_file_idx = state.current_file_idx
 
-    -- Find the line number by iterating through rendered lines
+    -- Find the line number by iterating through rendered lines (after header)
     local line_count = vim.api.nvim_buf_line_count(state.tree_buf)
-    for linenr = 1, line_count do
+    for linenr = M.header_lines + 1, line_count do
         local node = M.tree:get_node(linenr)
         if node and node.file_idx == state.current_file_idx then
             vim.api.nvim_buf_add_highlight(state.tree_buf, ns, "DifftTreeCurrent", linenr - 1, 0, -1)

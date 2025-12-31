@@ -38,7 +38,8 @@
 
 use mlua::prelude::*;
 use rayon::prelude::*;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod difftastic;
@@ -74,6 +75,71 @@ fn git_file_content(commit: &str, path: &Path) -> Option<String> {
         .ok()
         .filter(|output| output.status.success())
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Stats for a single file: (additions, deletions).
+type FileStats = HashMap<PathBuf, (u32, u32)>;
+
+/// Gets diff stats from git using `--numstat`.
+/// Output format: "additions\tdeletions\tpath"
+fn git_diff_stats(range: &str) -> FileStats {
+    let output = Command::new("git")
+        .args(["diff", "--numstat", range])
+        .output()
+        .ok();
+
+    let Some(output) = output.filter(|o| o.status.success()) else {
+        return HashMap::new();
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let add = parts.next()?.parse().ok()?;
+            let del = parts.next()?.parse().ok()?;
+            let path = parts.next()?;
+            Some((PathBuf::from(path), (add, del)))
+        })
+        .collect()
+}
+
+/// Translates a jj revset to a git commit hash.
+/// Uses `jj log -r <revset> --no-graph -T 'commit_id'`.
+fn jj_to_git_commit(revset: &str) -> Option<String> {
+    let output = Command::new("jj")
+        .args(["log", "-r", revset, "--no-graph", "-T", "commit_id"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Valid git commit hash is 40 hex characters
+    (commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())).then_some(commit)
+}
+
+/// Gets diff stats from jj by translating revsets to git commits.
+/// For colocated repos, uses `git diff --numstat` for accurate stats.
+fn jj_diff_stats(revset: &str) -> FileStats {
+    let (old_commit, new_commit) = if let Some((left, right)) = revset.split_once("..") {
+        // Range like "trunk()..@": diff between endpoints
+        (jj_to_git_commit(left), jj_to_git_commit(right))
+    } else {
+        // Single revision like "@": diff against parent
+        (
+            jj_to_git_commit(&format!("{revset}-")),
+            jj_to_git_commit(revset),
+        )
+    };
+
+    match (old_commit, new_commit) {
+        (Some(old), Some(new)) => git_diff_stats(&format!("{old}..{new}")),
+        (None, Some(new)) => git_diff_stats(&format!("{new}^..{new}")),
+        _ => HashMap::new(),
+    }
 }
 
 /// Runs difftastic via jj and parses the JSON output.
@@ -137,14 +203,22 @@ fn run_diff(lua: &Lua, (range, vcs): (String, String)) -> LuaResult<LuaTable> {
     }
     .map_err(LuaError::RuntimeError)?;
 
+    // Get line-based diff stats from VCS
+    let stats = if vcs == "git" {
+        git_diff_stats(&range)
+    } else {
+        jj_diff_stats(&range)
+    };
+
     let display_files: Vec<_> = if vcs == "git" {
         let (old_ref, new_ref) = parse_range(&range, "^");
         files
             .into_par_iter()
             .map(|file| {
+                let file_stats = stats.get(&file.path).copied();
                 let old_lines = into_lines(git_file_content(&old_ref, &file.path));
                 let new_lines = into_lines(git_file_content(&new_ref, &file.path));
-                processor::process_file(file, old_lines, new_lines)
+                processor::process_file(file, old_lines, new_lines, file_stats)
             })
             .collect()
     } else {
@@ -152,9 +226,10 @@ fn run_diff(lua: &Lua, (range, vcs): (String, String)) -> LuaResult<LuaTable> {
         files
             .into_par_iter()
             .map(|file| {
+                let file_stats = stats.get(&file.path).copied();
                 let old_lines = into_lines(jj_file_content(&old_ref, &file.path));
                 let new_lines = into_lines(jj_file_content(&new_ref, &file.path));
-                processor::process_file(file, old_lines, new_lines)
+                processor::process_file(file, old_lines, new_lines, file_stats)
             })
             .collect()
     };
