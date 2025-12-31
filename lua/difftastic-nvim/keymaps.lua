@@ -1,33 +1,52 @@
 --- Buffer-local keymaps for diff navigation.
 local M = {}
 
-function M.setup(state)
+--- Set up keymaps for diff buffers.
+--- @param buf number Buffer handle
+--- @param state table Plugin state
+local function setup_diff_keymaps(buf, state)
     local difft = require("difftastic-nvim")
     local keys = difft.config.keymaps
 
+    vim.keymap.set("n", keys.next_file, difft.next_file, { buffer = buf })
+    vim.keymap.set("n", keys.prev_file, difft.prev_file, { buffer = buf })
+    vim.keymap.set("n", keys.next_hunk, difft.next_hunk, { buffer = buf })
+    vim.keymap.set("n", keys.prev_hunk, difft.prev_hunk, { buffer = buf })
+    vim.keymap.set("n", keys.close, difft.close, { buffer = buf })
+    vim.keymap.set("n", keys.focus_tree, function()
+        if state.tree_win and vim.api.nvim_win_is_valid(state.tree_win) then
+            vim.api.nvim_set_current_win(state.tree_win)
+        end
+    end, { buffer = buf })
+end
+
+--- Set up keymaps for tree buffer.
+--- @param state table Plugin state
+local function setup_tree_keymaps(state)
+    local difft = require("difftastic-nvim")
+    local keys = difft.config.keymaps
+    local buf = state.tree_buf
+
+    vim.keymap.set("n", keys.focus_diff, function()
+        if state.left_win and vim.api.nvim_win_is_valid(state.left_win) then
+            vim.api.nvim_set_current_win(state.left_win)
+        end
+    end, { buffer = buf })
+    vim.keymap.set("n", keys.next_file, difft.next_file, { buffer = buf })
+    vim.keymap.set("n", keys.prev_file, difft.prev_file, { buffer = buf })
+end
+
+--- Setup all keymaps for the diff view.
+--- @param state table Plugin state
+function M.setup(state)
     for _, buf in ipairs({ state.left_buf, state.right_buf }) do
         if buf and vim.api.nvim_buf_is_valid(buf) then
-            vim.keymap.set("n", keys.next_file, difft.next_file, { buffer = buf })
-            vim.keymap.set("n", keys.prev_file, difft.prev_file, { buffer = buf })
-            vim.keymap.set("n", keys.next_hunk, difft.next_hunk, { buffer = buf })
-            vim.keymap.set("n", keys.prev_hunk, difft.prev_hunk, { buffer = buf })
-            vim.keymap.set("n", keys.close, difft.close, { buffer = buf })
-            vim.keymap.set("n", keys.focus_tree, function()
-                if vim.api.nvim_win_is_valid(state.tree_win) then
-                    vim.api.nvim_set_current_win(state.tree_win)
-                end
-            end, { buffer = buf })
+            setup_diff_keymaps(buf, state)
         end
     end
 
     if state.tree_buf and vim.api.nvim_buf_is_valid(state.tree_buf) then
-        vim.keymap.set("n", keys.focus_diff, function()
-            if vim.api.nvim_win_is_valid(state.left_win) then
-                vim.api.nvim_set_current_win(state.left_win)
-            end
-        end, { buffer = state.tree_buf })
-        vim.keymap.set("n", keys.next_file, difft.next_file, { buffer = state.tree_buf })
-        vim.keymap.set("n", keys.prev_file, difft.prev_file, { buffer = state.tree_buf })
+        setup_tree_keymaps(state)
     end
 end
 

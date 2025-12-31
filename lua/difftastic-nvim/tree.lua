@@ -7,14 +7,29 @@ local NuiLine = require("nui.line")
 local DEFAULT_ICON = ""
 local has_devicons, devicons = pcall(require, "nvim-web-devicons")
 
+--- Module state
+--- @type table|nil
 M.tree = nil
+--- @type table<number, string>
 M.file_to_node_id = {}
+--- @type number|nil
 M.current_file_idx = nil
+--- @type number
+M.total_additions = 0
+--- @type number
+M.total_deletions = 0
+--- Number of header lines (blank + summary + blank)
+M.header_lines = 3
 
+--- @return table Tree configuration
 local function get_config()
     return require("difftastic-nvim").config.tree
 end
 
+--- Get file icon from nvim-web-devicons if available.
+--- @param filename string
+--- @return string icon
+--- @return string|nil highlight_group
 local function get_file_icon(filename)
     local cfg = get_config()
     if cfg.icons.enable and has_devicons then
@@ -24,6 +39,9 @@ local function get_file_icon(filename)
     return DEFAULT_ICON, nil
 end
 
+--- Build an intermediate tree structure from flat file list.
+--- @param files table[] List of file objects with path, status, additions, deletions
+--- @return table Root node of the tree
 local function build_intermediate_tree(files)
     local root = {
         name = "",
@@ -193,9 +211,10 @@ local function prepare_node(node)
     return line
 end
 
--- Number of header lines (blank + summary + blank)
-M.header_lines = 3
-
+--- Render the header with totals.
+--- @param state table Plugin state
+--- @param total_add number Total additions
+--- @param total_del number Total deletions
 local function render_header(state, total_add, total_del)
     local width = get_config().width
 

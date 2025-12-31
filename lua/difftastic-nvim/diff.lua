@@ -3,17 +3,52 @@ local M = {}
 
 local FILLER = string.rep("╱", 500)
 
+--- Line positions where hunks start (1-indexed)
+--- @type number[]
 M.hunk_positions = {}
 
--- Language to Vim filetype mapping
+--- Maps difftastic language names to Vim filetypes
 local FILETYPES = {
-    Rust = "rust", Lua = "lua", TOML = "toml", JSON = "json",
-    JavaScript = "javascript", TypeScript = "typescript", Python = "python",
-    Go = "go", C = "c", ["C++"] = "cpp", Java = "java", Ruby = "ruby",
-    Shell = "sh", Bash = "bash", Markdown = "markdown", YAML = "yaml",
-    HTML = "html", CSS = "css",
+    Rust = "rust",
+    Lua = "lua",
+    TOML = "toml",
+    JSON = "json",
+    JavaScript = "javascript",
+    TypeScript = "typescript",
+    Python = "python",
+    Go = "go",
+    C = "c",
+    ["C++"] = "cpp",
+    Java = "java",
+    Ruby = "ruby",
+    Shell = "sh",
+    Bash = "bash",
+    Markdown = "markdown",
+    YAML = "yaml",
+    HTML = "html",
+    CSS = "css",
 }
 
+--- Set buffer options for diff buffers.
+--- @param buf number Buffer handle
+local function setup_diff_buffer(buf)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].modifiable = false
+end
+
+--- Set window options for diff windows.
+--- @param win number Window handle
+local function setup_diff_window(win)
+    vim.wo[win].scrollbind = true
+    vim.wo[win].cursorbind = true
+    vim.wo[win].number = true
+    vim.wo[win].signcolumn = "no"
+end
+
+--- Open the side-by-side diff panes.
+--- @param state table Plugin state
 function M.open(state)
     vim.cmd("vsplit")
     state.right_win = vim.api.nvim_get_current_win()
@@ -26,21 +61,15 @@ function M.open(state)
     state.left_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_win_set_buf(state.left_win, state.left_buf)
 
-    for _, buf in ipairs({ state.left_buf, state.right_buf }) do
-        vim.bo[buf].buftype = "nofile"
-        vim.bo[buf].bufhidden = "wipe"
-        vim.bo[buf].swapfile = false
-        vim.bo[buf].modifiable = false
-    end
-
-    for _, win in ipairs({ state.left_win, state.right_win }) do
-        vim.wo[win].scrollbind = true
-        vim.wo[win].cursorbind = true
-        vim.wo[win].number = true
-        vim.wo[win].signcolumn = "no"
-    end
+    setup_diff_buffer(state.left_buf)
+    setup_diff_buffer(state.right_buf)
+    setup_diff_window(state.left_win)
+    setup_diff_window(state.right_win)
 end
 
+--- Render a file's diff content into the left/right panes.
+--- @param state table Plugin state
+--- @param file table File data with rows, hunk_starts, language
 function M.render(state, file)
     local rows = file.rows or {}
 
@@ -117,16 +146,28 @@ function M.render(state, file)
     vim.api.nvim_win_set_cursor(state.right_win, { 1, 0 })
 end
 
+--- Get the current diff window (left or right).
+--- @param state table Plugin state
+--- @return number|nil Window handle or nil if invalid
 local function get_diff_win(state)
     local current = vim.api.nvim_get_current_win()
-    local win = (current == state.right_win) and state.right_win or state.left_win
-    return win and vim.api.nvim_win_is_valid(win) and win or nil
+    local win = current == state.right_win and state.right_win or state.left_win
+    if win and vim.api.nvim_win_is_valid(win) then
+        return win
+    end
+    return nil
 end
 
+--- Jump to the next hunk (wraps to first).
+--- @param state table Plugin state
 function M.next_hunk(state)
-    if #M.hunk_positions == 0 then return end
+    if #M.hunk_positions == 0 then
+        return
+    end
     local win = get_diff_win(state)
-    if not win then return end
+    if not win then
+        return
+    end
 
     local line = vim.api.nvim_win_get_cursor(win)[1]
     for _, pos in ipairs(M.hunk_positions) do
@@ -138,10 +179,16 @@ function M.next_hunk(state)
     vim.api.nvim_win_set_cursor(win, { M.hunk_positions[1], 0 })
 end
 
+--- Jump to the previous hunk (wraps to last).
+--- @param state table Plugin state
 function M.prev_hunk(state)
-    if #M.hunk_positions == 0 then return end
+    if #M.hunk_positions == 0 then
+        return
+    end
     local win = get_diff_win(state)
-    if not win then return end
+    if not win then
+        return
+    end
 
     local line = vim.api.nvim_win_get_cursor(win)[1]
     for i = #M.hunk_positions, 1, -1 do
