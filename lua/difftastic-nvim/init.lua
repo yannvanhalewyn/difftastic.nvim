@@ -24,6 +24,7 @@ M.config = {
         focus_tree = "<Tab>",
         focus_diff = "<Tab>",
         select = "<CR>",
+        goto_file = "gf",
     },
     tree = {
         width = 40,
@@ -87,13 +88,20 @@ function M.setup(opts)
 end
 
 --- Open diff view for a revision/commit range.
---- @param revset string jj revset or git commit range
+--- @param revset string|nil jj revset or git commit range (nil = unstaged, "--staged" = staged)
 function M.open(revset)
     if M.state.tree_win or M.state.left_win or M.state.right_win then
         M.close()
     end
 
-    local result = binary.get().run_diff(revset, M.config.vcs)
+    local result
+    if revset == nil then
+        result = binary.get().run_diff_unstaged(M.config.vcs)
+    elseif revset == "--staged" then
+        result = binary.get().run_diff_staged(M.config.vcs)
+    else
+        result = binary.get().run_diff(revset, M.config.vcs)
+    end
     if not result.files or #result.files == 0 then
         vim.notify("No changes found", vim.log.levels.INFO)
         return
@@ -249,6 +257,85 @@ function M.prev_hunk()
             diff.last_hunk(M.state)
         end
     end
+end
+
+--- Go to the file at the current cursor position in an editable buffer.
+--- Opens in a previous tabpage if one exists, otherwise creates a new tab.
+--- Only works from the right pane (new/working version of the file).
+function M.goto_file()
+    local state = M.state
+    local current_win = vim.api.nvim_get_current_win()
+
+    -- Only works from right pane (new version), not tree or left pane
+    if current_win ~= state.right_win or current_win == state.tree_win then
+        return
+    end
+
+    local file = state.files[state.current_file_idx]
+    if not file then
+        return
+    end
+
+    -- Deleted files have no right-side content to navigate to
+    if file.status == "deleted" then
+        return
+    end
+
+    -- Get current cursor position (row is 1-indexed, col is 0-indexed)
+    local cursor = vim.api.nvim_win_get_cursor(current_win)
+    local row, col = cursor[1], cursor[2]
+    local aligned = file.aligned_lines and file.aligned_lines[row]
+
+    -- Find the target line number (right side = new version)
+    local target_line
+    if aligned and aligned[2] then
+        -- Direct mapping exists
+        target_line = aligned[2] + 1 -- 0-indexed to 1-indexed
+    else
+        -- Filler line - find nearest non-filler line
+        -- Search upward first, then downward
+        for offset = 1, #file.aligned_lines do
+            -- Check above
+            if row - offset >= 1 then
+                local above = file.aligned_lines[row - offset]
+                if above and above[2] then
+                    target_line = above[2] + 1
+                    break
+                end
+            end
+            -- Check below
+            if row + offset <= #file.aligned_lines then
+                local below = file.aligned_lines[row + offset]
+                if below and below[2] then
+                    target_line = below[2] + 1
+                    break
+                end
+            end
+        end
+    end
+
+    -- Fallback to line 1 if no mapping found
+    target_line = target_line or 1
+
+    local filepath = file.path
+
+    -- Find previous tabpage or create new one
+    local tabs = vim.api.nvim_list_tabpages()
+    local current_idx = vim.fn.tabpagenr()
+    local target_tab = current_idx > 1 and tabs[current_idx - 1] or nil
+
+    if target_tab then
+        vim.api.nvim_set_current_tabpage(target_tab)
+    else
+        vim.cmd("tabnew")
+    end
+
+    -- Open file and jump to line and column
+    vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+    -- Clamp column to line length to avoid errors on shorter lines
+    local line_content = vim.api.nvim_buf_get_lines(0, target_line - 1, target_line, false)[1] or ""
+    local target_col = math.min(col, math.max(0, #line_content - 1))
+    vim.api.nvim_win_set_cursor(0, { target_line, target_col })
 end
 
 --- Update binary to latest release.

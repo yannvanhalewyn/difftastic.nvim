@@ -173,6 +173,12 @@ pub struct DisplayFile {
     ///
     /// Used for navigation commands like "jump to next hunk".
     pub hunk_starts: Vec<u32>,
+
+    /// Original line number mapping: `(left_line, right_line)` for each display row.
+    ///
+    /// `None` means filler line. Line numbers are 0-indexed into the source file.
+    /// Used for "goto file" navigation to jump from diff view to actual file location.
+    pub aligned_lines: Vec<(Option<u32>, Option<u32>)>,
 }
 
 /// Processes a difftastic file into display-ready format.
@@ -207,6 +213,7 @@ fn process_created(
     new_lines: Vec<String>,
     stats: Option<(u32, u32)>,
 ) -> DisplayFile {
+    let num_lines = new_lines.len();
     let rows: Vec<Row> = new_lines
         .into_iter()
         .map(|line| Row {
@@ -214,6 +221,10 @@ fn process_created(
             right: Side::with_full_highlight(line),
         })
         .collect();
+
+    // For created files: left is always None, right maps 0..n
+    let aligned_lines: Vec<(Option<u32>, Option<u32>)> =
+        (0..num_lines).map(|i| (None, Some(i as u32))).collect();
 
     let (additions, deletions) = stats.unwrap_or((rows.len() as u32, 0));
     let hunk_starts = if rows.is_empty() { vec![] } else { vec![0] };
@@ -226,6 +237,7 @@ fn process_created(
         deletions,
         rows,
         hunk_starts,
+        aligned_lines,
     }
 }
 
@@ -238,6 +250,7 @@ fn process_deleted(
     old_lines: Vec<String>,
     stats: Option<(u32, u32)>,
 ) -> DisplayFile {
+    let num_lines = old_lines.len();
     let rows: Vec<Row> = old_lines
         .into_iter()
         .map(|line| Row {
@@ -245,6 +258,10 @@ fn process_deleted(
             right: Side::filler(),
         })
         .collect();
+
+    // For deleted files: left maps 0..n, right is always None
+    let aligned_lines: Vec<(Option<u32>, Option<u32>)> =
+        (0..num_lines).map(|i| (Some(i as u32), None)).collect();
 
     let (additions, deletions) = stats.unwrap_or((0, rows.len() as u32));
     let hunk_starts = if rows.is_empty() { vec![] } else { vec![0] };
@@ -257,6 +274,7 @@ fn process_deleted(
         deletions,
         rows,
         hunk_starts,
+        aligned_lines,
     }
 }
 
@@ -360,6 +378,7 @@ fn process_changed(
         deletions,
         rows,
         hunk_starts,
+        aligned_lines: file.aligned_lines,
     }
 }
 
@@ -516,6 +535,19 @@ impl IntoLua for DisplayFile {
         table.set("rows", lua.create_sequence_from(rows)?)?;
 
         table.set("hunk_starts", lua.create_sequence_from(self.hunk_starts)?)?;
+
+        // Serialize aligned_lines as array of [left, right] pairs (nil for None)
+        let aligned: Vec<LuaValue> = self
+            .aligned_lines
+            .into_iter()
+            .map(|(left, right)| {
+                let pair = lua.create_table()?;
+                pair.set(1, left)?;
+                pair.set(2, right)?;
+                Ok(LuaValue::Table(pair))
+            })
+            .collect::<LuaResult<_>>()?;
+        table.set("aligned_lines", lua.create_sequence_from(aligned)?)?;
 
         Ok(LuaValue::Table(table))
     }
@@ -857,5 +889,92 @@ mod tests {
         assert_eq!(result.hunk_starts.len(), 2);
         assert_eq!(result.hunk_starts[0], 1);
         assert_eq!(result.hunk_starts[1], 5);
+    }
+
+    #[test]
+    fn aligned_lines_created_file() {
+        let file = DifftFile {
+            path: "new.rs".into(),
+            language: "Rust".into(),
+            status: Status::Created,
+            aligned_lines: vec![],
+            chunks: vec![],
+        };
+        let result = process_file(file, vec![], vec!["a".into(), "b".into(), "c".into()], None);
+
+        // Created files: left is always None, right maps 0..n
+        assert_eq!(result.aligned_lines.len(), 3);
+        assert_eq!(result.aligned_lines[0], (None, Some(0)));
+        assert_eq!(result.aligned_lines[1], (None, Some(1)));
+        assert_eq!(result.aligned_lines[2], (None, Some(2)));
+    }
+
+    #[test]
+    fn aligned_lines_deleted_file() {
+        let file = DifftFile {
+            path: "old.rs".into(),
+            language: "Rust".into(),
+            status: Status::Deleted,
+            aligned_lines: vec![],
+            chunks: vec![],
+        };
+        let result = process_file(file, vec!["x".into(), "y".into()], vec![], None);
+
+        // Deleted files: left maps 0..n, right is always None
+        assert_eq!(result.aligned_lines.len(), 2);
+        assert_eq!(result.aligned_lines[0], (Some(0), None));
+        assert_eq!(result.aligned_lines[1], (Some(1), None));
+    }
+
+    #[test]
+    fn aligned_lines_changed_file_preserved() {
+        let aligned = vec![
+            (Some(0), Some(0)),
+            (Some(1), Some(1)),
+            (None, Some(2)), // Addition
+            (Some(2), Some(3)),
+        ];
+        let file = DifftFile {
+            path: "mod.rs".into(),
+            language: "Rust".into(),
+            status: Status::Changed,
+            aligned_lines: aligned.clone(),
+            chunks: vec![],
+        };
+        let result = process_file(
+            file,
+            vec!["a".into(), "b".into(), "c".into()],
+            vec!["a".into(), "b".into(), "new".into(), "c".into()],
+            None,
+        );
+
+        // Changed files: aligned_lines should be passed through from difftastic
+        assert_eq!(result.aligned_lines, aligned);
+    }
+
+    #[test]
+    fn aligned_lines_with_deletion_filler() {
+        let aligned = vec![
+            (Some(0), Some(0)),
+            (Some(1), None), // Deletion - right side is filler
+            (Some(2), Some(1)),
+        ];
+        let file = DifftFile {
+            path: "del.rs".into(),
+            language: "Rust".into(),
+            status: Status::Changed,
+            aligned_lines: aligned.clone(),
+            chunks: vec![],
+        };
+        let result = process_file(
+            file,
+            vec!["a".into(), "deleted".into(), "b".into()],
+            vec!["a".into(), "b".into()],
+            None,
+        );
+
+        assert_eq!(result.aligned_lines, aligned);
+        // Row 1 should have right side as filler (None in aligned_lines)
+        assert_eq!(result.aligned_lines[1], (Some(1), None));
     }
 }
