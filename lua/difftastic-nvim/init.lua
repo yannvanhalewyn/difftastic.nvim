@@ -233,6 +233,7 @@ function M.next_hunk()
             diff.first_hunk(M.state)
         end
     end
+    vim.cmd("normal! zz")
 end
 
 --- Navigate to the previous hunk.
@@ -257,6 +258,7 @@ function M.prev_hunk()
             diff.last_hunk(M.state)
         end
     end
+    vim.cmd("normal! zz")
 end
 
 --- Go to the file at the current cursor position in an editable buffer.
