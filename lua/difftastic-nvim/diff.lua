@@ -27,6 +27,7 @@ local FILETYPES = {
     YAML = "yaml",
     HTML = "html",
     CSS = "css",
+    Clojure = "clojure",
 }
 
 --- Set buffer options for diff buffers.
